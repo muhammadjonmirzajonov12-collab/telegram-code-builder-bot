@@ -254,7 +254,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
-{"  webview_flutter: ^4.9.0" if needs_webview else ""}
+{"  webview_flutter: ^4.8.0" if needs_webview else ""}
 
 flutter:
   uses-material-design: true
@@ -283,8 +283,8 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.x'
           channel: 'stable'
+          cache: true
 
       - name: Backup user code
         run: |
@@ -293,12 +293,12 @@ jobs:
 
       - name: Create Flutter Android project structure
         run: |
-          # Faqat loyiha tuzilmasini yaratish (lib/main.dart ni ustiga yozmaydi)
-          flutter create . --project-name=app_builder --platforms=android --org com.builder.app
+          # Faqat loyiha tuzilmasini yaratish
+          flutter create . --project-name=app_builder --platforms=android --org com.builder.app --overwrite
           
       - name: Restore user code
         run: |
-          # Foydalanuvchi asl kodini qaytarish (flutter create tomonidan o'chirilgan bo'lsa)
+          # Foydalanuvchi asl kodini qaytarish
           cp /tmp/main_backup.dart lib/main.dart
 
       - name: Build APK
