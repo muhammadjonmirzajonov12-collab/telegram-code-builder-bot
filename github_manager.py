@@ -168,6 +168,8 @@ def create_flutter_repo(apk_path: str, code: str, app_name: str) -> tuple[bool, 
             # HTML/game kodini base64 qilib Flutter WebView ichida ko'rsatamiz
             import base64 as _b64
             html_b64 = _b64.b64encode(code.encode("utf-8")).decode("utf-8")
+            # Dart string ichida apostrof(') bosh muammo - ekranlash kerak
+            dart_safe_name = app_name.replace("'", "\\'").replace('"', '\\"')
             dart_code = f"""import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -181,7 +183,7 @@ class MyApp extends StatelessWidget {{
   Widget build(BuildContext context) {{
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: '{app_name}',
+      title: '{dart_safe_name}',
       theme: ThemeData(useMaterial3: true),
       home: const GameScreen(),
     );
