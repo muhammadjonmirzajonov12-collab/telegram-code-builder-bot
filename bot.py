@@ -34,8 +34,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+import json
+
 # Foydalanuvchi ma'lumotlar ombori
+SESSION_FILE = os.path.join(TEMP_DIR, "sessions.json")
 user_data_store = {}
+
+
+def load_sessions():
+    global user_data_store
+    if os.path.exists(SESSION_FILE):
+        try:
+            with open(SESSION_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                user_data_store = {int(k): v for k, v in data.items()}
+        except Exception:
+            pass
+
+
+def save_sessions():
+    try:
+        with open(SESSION_FILE, "w", encoding="utf-8") as f:
+            json.dump(user_data_store, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+load_sessions()
 
 
 # ============================================================
@@ -223,6 +247,7 @@ async def process_code(update: Update, context: ContextTypes.DEFAULT_TYPE, code:
         "logo_path": None,
         "project_dir": os.path.join(TEMP_DIR, f"project_{user_id}")
     }
+    save_sessions()
     
     code_type = analysis.get("type", "unknown")
     suggested_name = analysis.get("app_name", "MyApp")
@@ -294,8 +319,9 @@ async def logo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = int(data.split("_")[-1])
     
+    load_sessions()
     if user_id not in user_data_store:
-        await query.edit_message_text("❌ Sessiya tugagan. Kodni qayta yuboring.")
+        await query.edit_message_text("ℹ️ Yangi kod yuboring yoki /start bosing.")
         return
     
     # 1. Nomni tasdiqlash tugmasi
@@ -440,8 +466,9 @@ async def build_deploy_callback(update: Update, context: ContextTypes.DEFAULT_TY
     action = parts[0]
     user_id = int(parts[1])
     
+    load_sessions()
     if user_id not in user_data_store:
-        await query.edit_message_text("❌ Sessiya tugagan. Kodni qayta yuboring.")
+        await query.edit_message_text("ℹ️ Yangi kod yuboring yoki /start bosing.")
         return
     
     user_info = user_data_store[user_id]
