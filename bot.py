@@ -179,7 +179,12 @@ Iltimos, GitHub tokeningizni tekshiring."""
 
 # ============================================================
 # Matnli xabarlarni qabul qilish
-# ========    # 1. Agar foydalanuvchi ilova nomini yozayotgan bo'lsa
+# ============================================================
+async def handle_code_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+    
+    # 1. Agar foydalanuvchi ilova nomini yozayotgan bo'lsa
     if context.user_data.get("waiting_app_name"):
         context.user_data["waiting_app_name"] = False
         target_uid = context.user_data.get("app_name_user_id", user_id)
