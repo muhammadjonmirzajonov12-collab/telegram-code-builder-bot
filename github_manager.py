@@ -286,20 +286,19 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Backup user code
+      - name: Backup user code and pubspec
         run: |
-          # Foydalanuvchi kodini vaqtincha saqlash
           cp lib/main.dart /tmp/main_backup.dart
+          cp pubspec.yaml /tmp/pubspec_backup.yaml
 
       - name: Create Flutter Android project structure
         run: |
-          # Faqat loyiha tuzilmasini yaratish
           flutter create . --project-name=app_builder --platforms=android --org com.builder.app --overwrite
           
-      - name: Restore user code
+      - name: Restore user code and pubspec
         run: |
-          # Foydalanuvchi asl kodini qaytarish
           cp /tmp/main_backup.dart lib/main.dart
+          cp /tmp/pubspec_backup.yaml pubspec.yaml
 
       - name: Build APK
         run: |
