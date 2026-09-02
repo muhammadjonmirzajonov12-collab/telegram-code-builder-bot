@@ -36,28 +36,54 @@ logger = logging.getLogger(__name__)
 
 import json
 
-# Foydalanuvchi ma'lumotlar ombori
+# Foydalanuvchi ma'lumotlar ombori (global zaxira)
 SESSION_FILE = os.path.join(TEMP_DIR, "sessions.json")
 user_data_store = {}
 
 
 def load_sessions():
     global user_data_store
-    if os.path.exists(SESSION_FILE):
-        try:
+    try:
+        if os.path.exists(SESSION_FILE):
             with open(SESSION_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 user_data_store = {int(k): v for k, v in data.items()}
-        except Exception:
-            pass
+    except Exception:
+        pass
 
 
 def save_sessions():
     try:
+        os.makedirs(TEMP_DIR, exist_ok=True)
         with open(SESSION_FILE, "w", encoding="utf-8") as f:
-            json.dump(user_data_store, f, ensure_ascii=False)
+            json.dump({str(k): v for k, v in user_data_store.items()}, f, ensure_ascii=False)
     except Exception:
         pass
+
+
+def set_user_data(context, user_id: int, data: dict):
+    """Ma'lumotni ham context'ga ham global omborga saqlaydi"""
+    user_data_store[user_id] = data
+    context.user_data[f"session_{user_id}"] = data
+    save_sessions()
+
+
+def get_user_data(context, user_id: int):
+    """Avval context'dan, keyin global ombordan, keyin fayldan qidiradi"""
+    # 1. context.user_data ichida bor?
+    key = f"session_{user_id}"
+    if key in context.user_data:
+        return context.user_data[key]
+    # 2. Global omborda bor?
+    if user_id in user_data_store:
+        return user_data_store[user_id]
+    # 3. Diskdan qayta yuklash
+    load_sessions()
+    if user_id in user_data_store:
+        context.user_data[key] = user_data_store[user_id]
+        return user_data_store[user_id]
+    return None
+
 
 load_sessions()
 
@@ -153,23 +179,20 @@ Iltimos, GitHub tokeningizni tekshiring."""
 
 # ============================================================
 # Matnli xabarlarni qabul qilish
-# ============================================================
-async def handle_code_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text.strip()
-    
-    # 1. Agar foydalanuvchi ilova nomini yozayotgan bo'lsa
+# ========    # 1. Agar foydalanuvchi ilova nomini yozayotgan bo'lsa
     if context.user_data.get("waiting_app_name"):
         context.user_data["waiting_app_name"] = False
         target_uid = context.user_data.get("app_name_user_id", user_id)
-        if target_uid in user_data_store:
+        user_info = get_user_data(context, target_uid)
+        if user_info:
             clean_name = text.replace("/", "").replace("\\", "").strip()[:40] or "MyApp"
-            user_data_store[target_uid]["analysis"]["app_name"] = clean_name
+            user_info["analysis"]["app_name"] = clean_name
+            set_user_data(context, target_uid, user_info)
             await update.message.reply_text(
                 f"✅ Ilova nomi o'rnatildi: <b>{html.escape(clean_name)}</b>",
                 parse_mode="HTML"
             )
-            await ask_for_logo(update.message, target_uid)
+            await ask_for_logo(update.message, target_uid, context=context)
             return
 
     # 2. Asosiy menyu tugmalari
@@ -240,14 +263,14 @@ async def process_code(update: Update, context: ContextTypes.DEFAULT_TYPE, code:
     # AI tahlil
     analysis = analyze_code(code)
     
-    # Ma'lumotlarni xavfsiz saqlash
-    user_data_store[user_id] = {
+    # Ma'lumotlarni ikki qatlamda xavfsiz saqlash
+    session = {
         "code": code,
         "analysis": analysis,
         "logo_path": None,
         "project_dir": os.path.join(TEMP_DIR, f"project_{user_id}")
     }
-    save_sessions()
+    set_user_data(context, user_id, session)
     
     code_type = analysis.get("type", "unknown")
     suggested_name = analysis.get("app_name", "MyApp")
@@ -285,13 +308,14 @@ Yangi nom yozib yuboring yoki quyidagi tavsiya qilingan nomni tasdiqlang:"""
 
 
 # ============================================================
-# Logo so'rash bosqichi
+# Logo so'rash
 # ============================================================
-async def ask_for_logo(message, user_id: int):
-    if user_id not in user_data_store:
+async def ask_for_logo(message, user_id: int, context=None):
+    user_info = get_user_data(context, user_id) if context else user_data_store.get(user_id)
+    if not user_info:
         return
     
-    app_name = user_data_store[user_id]["analysis"].get("app_name", "MyApp")
+    app_name = user_info["analysis"].get("app_name", "MyApp")
     safe_name = html.escape(app_name)
     
     text = f"""🖼 <b>\"{safe_name}\" uchun logo qanday bo'lsin?</b>
@@ -319,17 +343,17 @@ async def logo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = int(data.split("_")[-1])
     
-    load_sessions()
-    if user_id not in user_data_store:
+    user_info = get_user_data(context, user_id)
+    if not user_info:
         await query.edit_message_text("ℹ️ Yangi kod yuboring yoki /start bosing.")
         return
     
     # 1. Nomni tasdiqlash tugmasi
     if "setname_default" in data:
         context.user_data["waiting_app_name"] = False
-        app_name = user_data_store[user_id]["analysis"].get("app_name", "MyApp")
+        app_name = user_info["analysis"].get("app_name", "MyApp")
         await query.edit_message_text(f"✅ Ilova nomi: <b>{html.escape(app_name)}</b>", parse_mode="HTML")
-        await ask_for_logo(query.message, user_id)
+        await ask_for_logo(query.message, user_id, context=context)
         return
 
     # 2. Rasm yuklash tanlansa
@@ -342,12 +366,13 @@ async def logo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     # 3. Avtomatik logo tanlansa
     elif "logo_auto" in data:
-        app_name = user_data_store[user_id]["analysis"].get("app_name", "MyApp")
+        app_name = user_info["analysis"].get("app_name", "MyApp")
         logo_path = os.path.join(TEMP_DIR, f"logo_{user_id}.png")
         
         await query.edit_message_text("🎨 Logo generatsiya qilinmoqda...")
         generate_simple_logo(app_name, logo_path)
-        user_data_store[user_id]["logo_path"] = logo_path
+        user_info["logo_path"] = logo_path
+        set_user_data(context, user_id, user_info)
         
         try:
             with open(logo_path, "rb") as photo_f:
@@ -359,13 +384,14 @@ async def logo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Logo send error: {e}")
             
-        await show_build_options(query.message, user_id)
+        await show_build_options(query.message, user_id, context=context)
         
     # 4. Logosiz o'tilsa
     elif "logo_skip" in data:
-        user_data_store[user_id]["logo_path"] = None
+        user_info["logo_path"] = None
+        set_user_data(context, user_id, user_info)
         await query.edit_message_text("⏭ Logosiz davom etilmoqda...")
-        await show_build_options(query.message, user_id)
+        await show_build_options(query.message, user_id, context=context)
 
 
 # ============================================================
@@ -376,7 +402,8 @@ async def handle_logo_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     user_id = context.user_data.get("logo_user_id")
-    if not user_id or user_id not in user_data_store:
+    user_info = get_user_data(context, user_id) if user_id else None
+    if not user_id or not user_info:
         await update.message.reply_text("❌ Avval kodingizni yuboring.")
         return
     
@@ -393,7 +420,8 @@ async def handle_logo_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if os.path.exists(raw_path):
         os.remove(raw_path)
     
-    user_data_store[user_id]["logo_path"] = logo_path
+    user_info["logo_path"] = logo_path
+    set_user_data(context, user_id, user_info)
     
     try:
         with open(logo_path, "rb") as photo_f:
@@ -404,17 +432,18 @@ async def handle_logo_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Photo send error: {e}")
     
-    await show_build_options(update.message, user_id)
+    await show_build_options(update.message, user_id, context=context)
 
 
 # ============================================================
 # Amalni tanlash tugmalari (Build / Deploy)
 # ============================================================
-async def show_build_options(message, user_id: int):
-    if user_id not in user_data_store:
+async def show_build_options(message, user_id: int, context=None):
+    user_info = get_user_data(context, user_id) if context else user_data_store.get(user_id)
+    if not user_info:
         return
     
-    analysis = user_data_store[user_id]["analysis"]
+    analysis = user_info["analysis"]
     code_type = analysis.get("type", "unknown")
     app_name = analysis.get("app_name", "MyApp")
     safe_name = html.escape(app_name)
@@ -466,12 +495,11 @@ async def build_deploy_callback(update: Update, context: ContextTypes.DEFAULT_TY
     action = parts[0]
     user_id = int(parts[1])
     
-    load_sessions()
-    if user_id not in user_data_store:
+    user_info = get_user_data(context, user_id)
+    if not user_info:
         await query.edit_message_text("ℹ️ Yangi kod yuboring yoki /start bosing.")
         return
     
-    user_info = user_data_store[user_id]
     code = user_info["code"]
     analysis = user_info["analysis"]
     logo_path = user_info.get("logo_path")
